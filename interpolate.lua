@@ -43,7 +43,7 @@ function animation_fix:capture_state()
     if not anim_state then
         return nil
     end
-    
+
     local state = {
         time = globals.curtime(),
         layers = { }
@@ -117,10 +117,10 @@ function animation_fix:apply_interpolated_state(state1, state2, t)
             local layer2 = state2.layers[layer_idx]
             
             -- if the layer is the same as the previous one, don't interpolate
-            layer.cycle = (layer1.cycle == layer2.cycle) and layer1.cycle or self:lerp(layer1.cycle, layer2.cycle, t)
-            layer.weight = (layer1.weight == layer2.weight) and layer1.weight or self:lerp(layer1.weight, layer2.weight, t)
-            layer.playback_rate = (layer1.playback_rate == layer2.playback_rate) and layer1.playback_rate or self:lerp(layer1.playback_rate, layer2.playback_rate, t)
-            layer.sequence = (layer1.sequence == layer2.sequence) and layer1.sequence or self:lerp(layer1.sequence, layer2.sequence, t)
+            layer.cycle = (layer1.cycle == layer2.cycle) and layer2.cycle or self:lerp(layer1.cycle, layer2.cycle, t)
+            layer.weight = (layer1.weight == layer2.weight) and layer2.weight or self:lerp(layer1.weight, layer2.weight, t)
+            layer.playback_rate = (layer1.playback_rate == layer2.playback_rate) and layer2.playback_rate or self:lerp(layer1.playback_rate, layer2.playback_rate, t)
+            layer.sequence = (layer1.sequence == layer2.sequence) and layer2.sequence or self:lerp(layer1.sequence, layer2.sequence, t)
         end
     end
 end
@@ -166,44 +166,66 @@ function animation_fix:reset()
     self:debug_print('reset')
 end
 
-client.set_event_callback('setup_command', function(cmd)
-    animation_fix:setup_command()
-end)
-
-client.set_event_callback('pre_render', function()
-    animation_fix:interpolate()
-end)
-
-client.set_event_callback('round_start', function()
-    animation_fix:reset()
-end)
-
-client.set_event_callback('shutdown', function()
-    local v1 = collectgarbage('count')
-    
-    if animation_fix then
-        if animation_fix.data then
-            animation_fix.data.layers = { }
-            animation_fix.data.server_anim_states = { }
-            animation_fix.data = { }
+--@author: Hack3r_jopi ~ https://yougame.biz/j/
+--@description: https://yougame.biz/threads/345134/
+local event_list = {
+    on_setup_command = function(ctx)
+        animation_fix:setup_command()
+    end,
+    on_pre_render = function()
+        animation_fix:interpolate()
+    end,
+    on_round_start = function()
+        animation_fix:reset()
+    end,
+    on_player_death = function(ctx)
+        if not (ctx.userid and ctx.attacker) then
+            return
         end
-        
-        for k, _ in pairs(animation_fix) do
-            animation_fix[k] = nil
+
+        local me = entity.get_local_player()
+        if me ~= client.userid_to_entindex(ctx.userid) then
+            return
         end
-        
-        animation_fix = nil
-    end
 
-    if _G._DEBUG then
-        _G._DEBUG = nil
-    end
-
-    collectgarbage('collect')
-    collectgarbage('collect') -- =)
-
-    local v2 = collectgarbage('count')
-    local v3 = v1 - v2
+        animation_fix:reset()
+    end,
+    on_level_init = function()
+        animation_fix:reset()
+    end,
+    on_shutdown = function()
+        local v1 = collectgarbage('count')
     
-    print('[ANIMS] Memory cleared: ' .. string.format('%.2f', v3) .. ' KB')
-end)
+        if animation_fix then
+            if animation_fix.data then
+                animation_fix.data.layers = { }
+                animation_fix.data.server_anim_states = { }
+                animation_fix.data = { }
+            end
+            
+            for k, _ in pairs(animation_fix) do
+                animation_fix[k] = nil
+            end
+            
+            animation_fix = nil
+        end
+    
+        if _G._DEBUG then
+            _G._DEBUG = nil
+        end
+    
+        collectgarbage('collect')
+        collectgarbage('collect') -- =)
+    
+        local v2 = collectgarbage('count')
+        local v3 = v1 - v2
+        
+        print('[ANIMS] Memory cleared: ' .. string.format('%.2f', v3) .. ' KB')
+    end
+}
+
+for k, v in next, event_list do
+    client.set_event_callback(k:sub(4), function(ctx)
+        v(ctx)
+    end)
+end
