@@ -19,15 +19,15 @@ function Event:set(callback)
     
     table.insert(self.callbacks, callback)
     return #self.callbacks
-    end
+end
 
-    function Event:remove(handle)
+function Event:remove(handle)
     if self.callbacks[handle] then
         self.callbacks[handle] = nil
     end
-    end
+end
 
-    function Event:call(...)
+function Event:call(...)
     local results = { }
     for _, callback in pairs(self.callbacks) do
         local result = callback(...)
@@ -48,6 +48,10 @@ events.pre_should_skip_anim_frame = Event.new()
 events.post_should_skip_anim_frame = Event.new()
 events.pre_interpolate_server_entities = Event.new()
 events.post_interpolate_server_entities = Event.new()
+events.pre_setup_bones = Event.new()
+events.post_setup_bones = Event.new()
+events.pre_perform_screen_overlay = Event.new()
+events.post_perform_screen_overlay = Event.new()
 
 local detour = (function()
     local detour_lib = {}
@@ -62,7 +66,7 @@ local detour = (function()
     local function opcode_scan(module, pattern, offset)
         local sig = client.find_signature(module, pattern) 
         if not sig then
-            error(string.format('failed to find signature: %s', pattern))
+            error(string.format('failed to find signature: %s', module))
         end
         return cast('uintptr_t', sig) + (offset or 0)
     end
@@ -158,11 +162,14 @@ local detour = (function()
     return detour_lib
 end)()
 
-local g_ctx = { }
-g_ctx.patterns = {
-    updateclientside = client.find_signature('client.dll', '\x55\x8B\xEC\x51\x56\x8B\xF1\x80\xBE\xCC\xCC\x00\x00\x00\x74\x36\x8B\x06\xFF\x90\xCC\xCC\x00\x00'),
-    skipanimframe = client.find_signature('client.dll', '\x57\x8B\xF9\x8B\x07\x8B\x80\xCC\xCC\xCC\xCC\xFF\xD0\x84\xC0\x75\x02'),
-    interpolate_server_entities = client.find_signature('client.dll', '\x55\x8B\xEC\x83\xEC\x1C\x8B\x0D\xCC\xCC\xCC\xCC\x53\x56')
+local g_ctx = {
+    patterns = {
+        updateclientside = client.find_signature('client.dll', '\x55\x8B\xEC\x51\x56\x8B\xF1\x80\xBE\xCC\xCC\x00\x00\x00\x74\x36\x8B\x06\xFF\x90\xCC\xCC\x00\x00'),
+        skipanimframe = client.find_signature('client.dll', '\x57\x8B\xF9\x8B\x07\x8B\x80\xCC\xCC\xCC\xCC\xFF\xD0\x84\xC0\x75\x02'),
+        interpolate_server_entities = client.find_signature('client.dll', '\x55\x8B\xEC\x83\xEC\x1C\x8B\x0D\xCC\xCC\xCC\xCC\x53\x56'),
+        setupbones = client.find_signature('client.dll', '\x55\x8B\xEC\x83\xE4\xF0\xB8\xD8'),
+        perform_screen_overlay = client.find_signature('client.dll', '\x55\x8B\xEC\x51\xA1\xCC\xCC\xCC\xCC\x53\x56\x8B\xD9')
+    }
 }
 
 function hk_updateclientside(ecx, edx)
@@ -177,8 +184,11 @@ function hk_updateclientside(ecx, edx)
         
     local result = o_updateclientside(ecx, edx)
         
-    events.post_update_clientside_animations:call(ecx, edx, result)
-        
+    local post_override = events.post_update_clientside_animations:call(ecx, edx, result)
+    if post_override ~= nil then
+        return post_override
+    end
+
     return result
 end
 
@@ -222,9 +232,52 @@ function hk_interpolate_server_entities(ecx, edx)
     return result
 end
 
+function hk_setupbones(ecx, edx, bone_to_world, max_bones, mask, time)
+    local player = ffi.cast("void***", ffi.cast("uintptr_t", ecx) - 4)
+    if player == nil then
+        return o_setupbones(ecx, edx, bone_to_world, max_bones, mask, time)
+    end
+
+    local override = events.pre_setup_bones:call(ecx, edx, bone_to_world, max_bones, mask, time)
+    if override ~= nil then
+        return override
+    end
+        
+    local result = o_setupbones(ecx, edx, bone_to_world, max_bones, mask, time)
+        
+    local post_override = events.post_setup_bones:call(ecx, edx, bone_to_world, max_bones, mask, time, result)
+    if post_override ~= nil then
+        return post_override
+    end
+
+    return result
+end
+
+function hk_perform_screen_overlay(_this, edx, x, y, w, h)
+    if _this == nil then
+        return o_setupbones(_this, edx, x, y, w, h)
+    end
+
+    local override = events.pre_perform_screen_overlay:call(_this, edx, x, y, w, h)
+    if override ~= nil then
+        return override
+    end
+        
+    local result = o_perform_screen_overlay(_this, edx, x, y, w, h)
+        
+    local post_override = events.post_perform_screen_overlay:call(_this, edx, x, y, w, h, result)
+    if post_override ~= nil then
+        return post_override
+    end
+
+    return result
+end
+
 o_updateclientside = detour.new('void(__fastcall*)(void*, void*)', hk_updateclientside, g_ctx.patterns.updateclientside)
 o_skipanimframe = detour.new('bool(__fastcall*)(void*, void*)', hk_skipanimframe, g_ctx.patterns.skipanimframe)
 o_interpolate_server_entities = detour.new('void(__fastcall*)(void*, void*)', hk_interpolate_server_entities, g_ctx.patterns.interpolate_server_entities)
+o_setupbones = detour.new('bool(__fastcall*)(void*, void*, int, int, int, int)', hk_setupbones, g_ctx.patterns.setupbones)
+o_perform_screen_overlay = detour.new('void(__fastcall*)(void*, void*, int, int, int, int)', hk_perform_screen_overlay, g_ctx.patterns.perform_screen_overlay)
 
 client.set_event_callback('shutdown', function()
     for _, event in pairs({
@@ -233,7 +286,11 @@ client.set_event_callback('shutdown', function()
         events.pre_should_skip_anim_frame,
         events.post_should_skip_anim_frame,
         events.pre_interpolate_server_entities,
-        events.post_interpolate_server_entities
+        events.post_interpolate_server_entities,
+        events.pre_setup_bones,
+        events.post_setup_bones,
+        events.pre_perform_screen_overlay,
+        events.post_perform_screen_overlay
     }) do
         event.callbacks = { }
     end
