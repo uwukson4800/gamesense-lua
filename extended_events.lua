@@ -66,6 +66,8 @@ events.pre_senddatagram = Event.new()
 events.post_senddatagram = Event.new()
 events.pre_getclientmodelrenderable = Event.new()
 events.post_getclientmodelrenderable = Event.new()
+events.pre_setvisualdata = Event.new()
+events.post_setvisualdata = Event.new()
 
 local detour = (function()
     local detour_lib = {}
@@ -190,7 +192,8 @@ local g_ctx = {
         csblood_spray = client.find_signature('client.dll', '\x55\x8B\xEC\x8B\x4D\x08\xF3\x0F\x10\x51\xCC\x8D\x51\x18'),
         svcmsgvoicedata = client.find_signature('engine.dll', '\x55\x8B\xEC\x83\xE4\xF8\xA1\xCC\xCC\xCC\xCC\x81\xEC\xCC\xCC\xCC\xCC\x53\x56\x8B\xF1\xB9\xCC\xCC\xCC\xCC\x57\xFF\x50\x34\x8B\x7D\x08\x85\xC0\x74\x13\x8B\x47\x08'),
         senddatagram = client.find_signature('engine.dll', '\x55\x8B\xEC\x83\xE4\xF0\xB8\xCC\xCC\xCC\xCC\xE8\xCC\xCC\xCC\xCC\x56\x57\x8B\xF9\x89\x7C\x24\x14'),
-        getclientmodelrenderable = client.find_signature('client.dll', '\x56\x8B\xF1\x80\xBE\xCC\xCC\xCC\xCC\xCC\x0F\x84\xCC\xCC\xCC\xCC\x80\xBE\xCC\xCC\xCC\xCC\xCC\x0F\x85\xCC\xCC\xCC\xCC\x8B\x0D')
+        getclientmodelrenderable = client.find_signature('client.dll', '\x56\x8B\xF1\x80\xBE\xCC\xCC\xCC\xCC\xCC\x0F\x84\xCC\xCC\xCC\xCC\x80\xBE\xCC\xCC\xCC\xCC\xCC\x0F\x85\xCC\xCC\xCC\xCC\x8B\x0D'),
+        setvisualdata = client.find_signature('client.dll', '\x55\x8B\xEC\x81\xEC\xCC\xCC\xCC\xCC\x53\x8B\xD9\x56\x57\x8B\x53\x5C')
     }
 }
 
@@ -437,6 +440,26 @@ function hk_getclientmodelrenderable(ecx, edx)
     return result
 end
 
+function hk_setvisualdata(ecx, edx, shader_name)
+    if ecx == nil then
+        return o_setvisualdata(ecx, edx, shader_name)
+    end
+
+    local override = events.pre_setvisualdata:call(ecx, edx, shader_name)
+    if override ~= nil then
+        return override
+    end
+        
+    local result = o_setvisualdata(ecx, edx, shader_name)
+        
+    local post_override = events.post_setvisualdata:call(ecx, edx, shader_name, result) -- TODO: ecx -> m_visuals_data
+    if post_override ~= nil then
+        return post_override
+    end
+
+    return result
+end
+
 o_updateclientside = detour.new('void(__fastcall*)(void*, void*)', hk_updateclientside, g_ctx.patterns.updateclientside)
 o_skipanimframe = detour.new('bool(__fastcall*)(void*, void*)', hk_skipanimframe, g_ctx.patterns.skipanimframe)
 o_interpolate_server_entities = detour.new('void(__fastcall*)(void*, void*)', hk_interpolate_server_entities, g_ctx.patterns.interpolate_server_entities)
@@ -449,6 +472,7 @@ o_csblood_spray = detour.new('void(__fastcall*)(void*)', hk_csblood_spray, g_ctx
 o_svcmsgvoicedata = detour.new('bool(__fastcall*)(void*, void*, void*)', hk_svcmsgvoicedata, g_ctx.patterns.svcmsgvoicedata)
 o_senddatagram = detour.new('int(__fastcall*)(void*, void*, void*)', hk_senddatagram, g_ctx.patterns.senddatagram)
 o_getclientmodelrenderable = detour.new('void*(__fastcall*)(void*, void*)', hk_getclientmodelrenderable, g_ctx.patterns.getclientmodelrenderable)
+o_setvisualdata = detour.new('void(__fastcall*)(void*, void*, const char*)', hk_setvisualdata, g_ctx.patterns.setvisualdata)
 
 client.set_event_callback('shutdown', function()
     for _, event in pairs({
@@ -475,7 +499,9 @@ client.set_event_callback('shutdown', function()
         events.pre_senddatagram,
         events.post_senddatagram,
         events.pre_getclientmodelrenderable,
-        events.post_getclientmodelrenderable
+        events.post_getclientmodelrenderable,
+        events.pre_setvisualdata,
+        events.post_setvisualdata
     }) do
         event.callbacks = { }
     end
