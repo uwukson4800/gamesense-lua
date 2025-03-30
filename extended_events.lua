@@ -68,6 +68,12 @@ events.pre_getclientmodelrenderable = Event.new()
 events.post_getclientmodelrenderable = Event.new()
 events.pre_setvisualdata = Event.new()
 events.post_setvisualdata = Event.new()
+events.pre_should_interpolate = Event.new()
+events.post_should_interpolate = Event.new()
+events.pre_check_for_seq_change = Event.new()
+events.post_check_for_seq_change = Event.new()
+events.pre_paint = Event.new()
+events.post_paint = Event.new()
 
 local detour = (function()
     local detour_lib = {}
@@ -193,7 +199,10 @@ local g_ctx = {
         svcmsgvoicedata = client.find_signature('engine.dll', '\x55\x8B\xEC\x83\xE4\xF8\xA1\xCC\xCC\xCC\xCC\x81\xEC\xCC\xCC\xCC\xCC\x53\x56\x8B\xF1\xB9\xCC\xCC\xCC\xCC\x57\xFF\x50\x34\x8B\x7D\x08\x85\xC0\x74\x13\x8B\x47\x08'),
         senddatagram = client.find_signature('engine.dll', '\x55\x8B\xEC\x83\xE4\xF0\xB8\xCC\xCC\xCC\xCC\xE8\xCC\xCC\xCC\xCC\x56\x57\x8B\xF9\x89\x7C\x24\x14'),
         getclientmodelrenderable = client.find_signature('client.dll', '\x56\x8B\xF1\x80\xBE\xCC\xCC\xCC\xCC\xCC\x0F\x84\xCC\xCC\xCC\xCC\x80\xBE\xCC\xCC\xCC\xCC\xCC\x0F\x85\xCC\xCC\xCC\xCC\x8B\x0D'),
-        setvisualdata = client.find_signature('client.dll', '\x55\x8B\xEC\x81\xEC\xCC\xCC\xCC\xCC\x53\x8B\xD9\x56\x57\x8B\x53\x5C')
+        setvisualdata = client.find_signature('client.dll', '\x55\x8B\xEC\x81\xEC\xCC\xCC\xCC\xCC\x53\x8B\xD9\x56\x57\x8B\x53\x5C'),
+        should_interpolate = client.find_signature('client.dll', '\x56\x8B\xF1\xE8\xCC\xCC\xCC\xCC\x3B\xF0'),
+        check_for_seq_change = client.find_signature('client.dll', '\x55\x8B\xEC\x51\x53\x8B\x5D\x08\x56\x8B\xF1\x57\x85'),
+        paint = client.find_signature('engine.dll', '\x55\x8B\xEC\x83\xEC\x40\x53\x8B\xD9\x8B\x0D\xCC\xCC\xCC\xCC\x89\x5D\xF8')
     }
 }
 
@@ -460,6 +469,62 @@ function hk_setvisualdata(ecx, edx, shader_name)
     return result
 end
 
+function hk_should_interpolate(ecx, edx)
+    if ecx == nil then
+        return o_should_interpolate(ecx, edx)
+    end
+
+    local override = events.pre_should_interpolate:call(ecx, edx)
+    if override ~= nil then
+        return override
+    end
+        
+    local result = o_should_interpolate(ecx, edx)
+        
+    local post_override = events.post_should_interpolate:call(ecx, edx, result)
+    if post_override ~= nil then
+        return post_override
+    end
+
+    return result
+end
+
+function hk_check_for_seq_change(ecx, edx, hdr, cur_seq, force_new_seq, interp)
+    local override = events.pre_check_for_seq_change:call(ecx, edx, hdr, cur_seq, force_new_seq, interp)
+    if override ~= nil then
+        return override
+    end
+        
+    local result = o_check_for_seq_change(ecx, edx, hdr, cur_seq, force_new_seq, interp)
+        
+    local post_override = events.post_check_for_seq_change:call(ecx, edx, hdr, cur_seq, force_new_seq, interp, result)
+    if post_override ~= nil then
+        return post_override
+    end
+
+    return result
+end
+
+function hk_paint(ecx, edx, mode)
+    if ecx == nil then
+        return o_paint(ecx, edx, mode)
+    end
+
+    local override = events.pre_paint:call(ecx, edx, mode)
+    if override ~= nil then
+        return override
+    end
+        
+    local result = o_paint(ecx, edx, mode)
+        
+    local post_override = events.post_paint:call(ecx, edx, mode, result)
+    if post_override ~= nil then
+        return post_override
+    end
+
+    return result
+end
+
 o_updateclientside = detour.new('void(__fastcall*)(void*, void*)', hk_updateclientside, g_ctx.patterns.updateclientside)
 o_skipanimframe = detour.new('bool(__fastcall*)(void*, void*)', hk_skipanimframe, g_ctx.patterns.skipanimframe)
 o_interpolate_server_entities = detour.new('void(__fastcall*)(void*, void*)', hk_interpolate_server_entities, g_ctx.patterns.interpolate_server_entities)
@@ -473,6 +538,9 @@ o_svcmsgvoicedata = detour.new('bool(__fastcall*)(void*, void*, void*)', hk_svcm
 o_senddatagram = detour.new('int(__fastcall*)(void*, void*, void*)', hk_senddatagram, g_ctx.patterns.senddatagram)
 o_getclientmodelrenderable = detour.new('void*(__fastcall*)(void*, void*)', hk_getclientmodelrenderable, g_ctx.patterns.getclientmodelrenderable)
 o_setvisualdata = detour.new('void(__fastcall*)(void*, void*, const char*)', hk_setvisualdata, g_ctx.patterns.setvisualdata)
+o_should_interpolate = detour.new('bool(__fastcall*)(void*, void*)', hk_should_interpolate, g_ctx.patterns.should_interpolate)
+o_check_for_seq_change = detour.new('void(__fastcall*)(void*, void*, void*, int, bool, bool)', hk_check_for_seq_change, g_ctx.patterns.check_for_seq_change)
+o_paint = detour.new('void(__fastcall*)(void*, void*, int)', hk_paint, g_ctx.patterns.paint)
 
 client.set_event_callback('shutdown', function()
     for _, event in pairs({
@@ -501,7 +569,13 @@ client.set_event_callback('shutdown', function()
         events.pre_getclientmodelrenderable,
         events.post_getclientmodelrenderable,
         events.pre_setvisualdata,
-        events.post_setvisualdata
+        events.post_setvisualdata,
+        events.pre_should_interpolate,
+        events.post_should_interpolate,
+        events.pre_check_for_seq_change,
+        events.post_check_for_seq_change,
+        events.pre_paint,
+        events.post_paint
     }) do
         event.callbacks = { }
     end
