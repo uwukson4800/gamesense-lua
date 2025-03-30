@@ -52,6 +52,12 @@ events.pre_setup_bones = Event.new()
 events.post_setup_bones = Event.new()
 events.pre_perform_screen_overlay = Event.new()
 events.post_perform_screen_overlay = Event.new()
+events.pre_accumulate_layers = Event.new()
+events.post_accumulate_layers = Event.new()
+events.pre_reset_latched = Event.new()
+events.post_reset_latched = Event.new()
+events.pre_build_transformations = Event.new()
+events.post_build_transformations = Event.new()
 
 local detour = (function()
     local detour_lib = {}
@@ -168,7 +174,10 @@ local g_ctx = {
         skipanimframe = client.find_signature('client.dll', '\x57\x8B\xF9\x8B\x07\x8B\x80\xCC\xCC\xCC\xCC\xFF\xD0\x84\xC0\x75\x02'),
         interpolate_server_entities = client.find_signature('client.dll', '\x55\x8B\xEC\x83\xEC\x1C\x8B\x0D\xCC\xCC\xCC\xCC\x53\x56'),
         setupbones = client.find_signature('client.dll', '\x55\x8B\xEC\x83\xE4\xF0\xB8\xD8'),
-        perform_screen_overlay = client.find_signature('client.dll', '\x55\x8B\xEC\x51\xA1\xCC\xCC\xCC\xCC\x53\x56\x8B\xD9')
+        perform_screen_overlay = client.find_signature('client.dll', '\x55\x8B\xEC\x51\xA1\xCC\xCC\xCC\xCC\x53\x56\x8B\xD9'),
+        accumulate_layers = client.find_signature('client.dll', '\x55\x8B\xEC\x57\x8B\xF9\x8B\x0D\xCC\xCC\xCC\xCC\x8B\x01\x8B\x80'),
+        reset_latched = client.find_signature('client.dll', '\x56\x8B\xF1\x57\x8B\xBE\xCC\xCC\xCC\xCC\x85\xFF\x74\xCC\x8B\xCF\xE8\xCC\xCC\xCC\xCC\x68'),
+        build_transformation = client.find_signature('client.dll', '\x55\x8B\xEC\x53\x56\x57\xFF\x75\xCC\x8B\x7D')
     }
 }
 
@@ -273,11 +282,74 @@ function hk_perform_screen_overlay(_this, edx, x, y, w, h)
     return result
 end
 
+function hk_accumulate_layers(ecx, edx, bone_setup, pos, q, curtime)
+    if ecx == nil then
+        return o_accumulate_layers(ecx, edx, bone_setup, pos, q, curtime)
+    end
+
+    local override = events.pre_accumulate_layers:call(ecx, edx, bone_setup, pos, q, curtime)
+    if override ~= nil then
+        return override
+    end
+        
+    local result = o_accumulate_layers(ecx, edx, bone_setup, pos, q, curtime)
+        
+    local post_override = events.post_accumulate_layers:call(ecx, edx, bone_setup, pos, q, curtime, result)
+    if post_override ~= nil then
+        return post_override
+    end
+
+    return result
+end
+
+function hk_reset_latched(ecx, edx)
+    if ecx == nil then
+        return o_reset_latched(ecx, edx)
+    end
+
+    local override = events.pre_reset_latched:call(ecx, edx)
+    if override ~= nil then
+        return override
+    end
+        
+    local result = o_reset_latched(ecx, edx)
+        
+    local post_override = events.post_reset_latched:call(ecx, edx, result)
+    if post_override ~= nil then
+        return post_override
+    end
+
+    return result
+end
+
+function hk_build_transformation(ecx, edx, hdr, unk1, unk2, unk3, unk4, unk5)
+    if ecx == nil then
+        return o_build_transformation(ecx, edx, hdr, unk1, unk2, unk3, unk4, unk5)
+    end
+
+    local override = events.pre_build_transformations:call(ecx, edx, hdr, unk1, unk2, unk3, unk4, unk5)
+    if override ~= nil then
+        return override
+    end
+        
+    local result = o_build_transformation(ecx, edx, hdr, unk1, unk2, unk3, unk4, unk5)
+        
+    local post_override = events.post_build_transformations:call(ecx, edx, hdr, unk1, unk2, unk3, unk4, unk5, result)
+    if post_override ~= nil then
+        return post_override
+    end
+
+    return result
+end
+
 o_updateclientside = detour.new('void(__fastcall*)(void*, void*)', hk_updateclientside, g_ctx.patterns.updateclientside)
 o_skipanimframe = detour.new('bool(__fastcall*)(void*, void*)', hk_skipanimframe, g_ctx.patterns.skipanimframe)
 o_interpolate_server_entities = detour.new('void(__fastcall*)(void*, void*)', hk_interpolate_server_entities, g_ctx.patterns.interpolate_server_entities)
 o_setupbones = detour.new('bool(__fastcall*)(void*, void*, int, int, int, int)', hk_setupbones, g_ctx.patterns.setupbones)
 o_perform_screen_overlay = detour.new('void(__fastcall*)(void*, void*, int, int, int, int)', hk_perform_screen_overlay, g_ctx.patterns.perform_screen_overlay)
+o_accumulate_layers = detour.new('void(__fastcall*)(void*, void*, void*, int, int, float)', hk_accumulate_layers, g_ctx.patterns.accumulate_layers)
+o_reset_latched = detour.new('void(__fastcall*)(void*, void*)', hk_reset_latched, g_ctx.patterns.reset_latched)
+o_build_transformation = detour.new('void(__fastcall*)(void*, void*, void*, int, int, int, int, int)', hk_build_transformation, g_ctx.patterns.build_transformation)
 
 client.set_event_callback('shutdown', function()
     for _, event in pairs({
@@ -290,7 +362,13 @@ client.set_event_callback('shutdown', function()
         events.pre_setup_bones,
         events.post_setup_bones,
         events.pre_perform_screen_overlay,
-        events.post_perform_screen_overlay
+        events.post_perform_screen_overlay,
+        events.pre_accumulate_layers,
+        events.post_accumulate_layers,
+        events.pre_reset_latched,
+        events.post_reset_latched,
+        events.pre_build_transformations,
+        events.post_build_transformations
     }) do
         event.callbacks = { }
     end
