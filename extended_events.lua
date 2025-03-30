@@ -58,6 +58,14 @@ events.pre_reset_latched = Event.new()
 events.post_reset_latched = Event.new()
 events.pre_build_transformations = Event.new()
 events.post_build_transformations = Event.new()
+events.pre_csblood_spray = Event.new()
+events.post_csblood_spray = Event.new()
+events.pre_svcmsgvoicedata = Event.new()
+events.post_svcmsgvoicedata = Event.new()
+events.pre_senddatagram = Event.new()
+events.post_senddatagram = Event.new()
+events.pre_getclientmodelrenderable = Event.new()
+events.post_getclientmodelrenderable = Event.new()
 
 local detour = (function()
     local detour_lib = {}
@@ -177,7 +185,12 @@ local g_ctx = {
         perform_screen_overlay = client.find_signature('client.dll', '\x55\x8B\xEC\x51\xA1\xCC\xCC\xCC\xCC\x53\x56\x8B\xD9'),
         accumulate_layers = client.find_signature('client.dll', '\x55\x8B\xEC\x57\x8B\xF9\x8B\x0D\xCC\xCC\xCC\xCC\x8B\x01\x8B\x80'),
         reset_latched = client.find_signature('client.dll', '\x56\x8B\xF1\x57\x8B\xBE\xCC\xCC\xCC\xCC\x85\xFF\x74\xCC\x8B\xCF\xE8\xCC\xCC\xCC\xCC\x68'),
-        build_transformation = client.find_signature('client.dll', '\x55\x8B\xEC\x53\x56\x57\xFF\x75\xCC\x8B\x7D')
+        build_transformation = client.find_signature('client.dll', '\x55\x8B\xEC\x53\x56\x57\xFF\x75\xCC\x8B\x7D'),
+        createmove = client.find_signature('client.dll', '\x55\x8B\xEC\x56\x8D\x75\x04\x8B\x0E\xE8\xCC\xCC\xCC\xCC\x8B\x0E'), -- TODO: hook this // bool __fastcall hooks::createmove(void* ecx, void* edx, float sample_time, cmd_t* cmd)
+        csblood_spray = client.find_signature('client.dll', '\x55\x8B\xEC\x8B\x4D\x08\xF3\x0F\x10\x51\xCC\x8D\x51\x18'),
+        svcmsgvoicedata = client.find_signature('engine.dll', '\x55\x8B\xEC\x83\xE4\xF8\xA1\xCC\xCC\xCC\xCC\x81\xEC\xCC\xCC\xCC\xCC\x53\x56\x8B\xF1\xB9\xCC\xCC\xCC\xCC\x57\xFF\x50\x34\x8B\x7D\x08\x85\xC0\x74\x13\x8B\x47\x08'),
+        senddatagram = client.find_signature('engine.dll', '\x55\x8B\xEC\x83\xE4\xF0\xB8\xCC\xCC\xCC\xCC\xE8\xCC\xCC\xCC\xCC\x56\x57\x8B\xF9\x89\x7C\x24\x14'),
+        getclientmodelrenderable = client.find_signature('client.dll', '\x56\x8B\xF1\x80\xBE\xCC\xCC\xCC\xCC\xCC\x0F\x84\xCC\xCC\xCC\xCC\x80\xBE\xCC\xCC\xCC\xCC\xCC\x0F\x85\xCC\xCC\xCC\xCC\x8B\x0D')
     }
 }
 
@@ -342,6 +355,88 @@ function hk_build_transformation(ecx, edx, hdr, unk1, unk2, unk3, unk4, unk5)
     return result
 end
 
+-- TODO: effect_data
+function hk_csblood_spray(effect_data)
+    if effect_data == nil then
+        return o_csblood_spray(effect_data)
+    end
+
+    local override = events.pre_csblood_spray:call(effect_data)
+    if override ~= nil then
+        return override
+    end
+        
+    local result = o_csblood_spray(effect_data)
+        
+    local post_override = events.post_csblood_spray:call(effect_data, result)
+    if post_override ~= nil then
+        return post_override
+    end
+
+    return result
+end
+
+-- TODO: voice_data
+function hk_svcmsgvoicedata(ecx, edx, voice_data)
+    if ecx == nil then
+        return o_svcmsgvoicedata(ecx, edx, voice_data)
+    end
+
+    local override = events.pre_svcmsgvoicedata:call(ecx, edx, voice_data)
+    if override ~= nil then
+        return override
+    end
+        
+    local result = o_svcmsgvoicedata(ecx, edx, voice_data)
+        
+    local post_override = events.post_svcmsgvoicedata:call(ecx, edx, voice_data, result)
+    if post_override ~= nil then
+        return post_override
+    end
+
+    return result
+end
+
+function hk_senddatagram(ecx, edx, datagram)
+    if ecx == nil then
+        return o_senddatagram(ecx, edx, datagram)
+    end
+
+    local override = events.pre_senddatagram:call(ecx, edx, datagram)
+    if override ~= nil then
+        return override
+    end
+        
+    local result = o_senddatagram(ecx, edx, datagram)
+        
+    local post_override = events.post_senddatagram:call(ecx, edx, datagram, result)
+    if post_override ~= nil then
+        return post_override
+    end
+
+    return result
+end
+
+function hk_getclientmodelrenderable(ecx, edx)
+    if ecx == nil then
+        return o_getclientmodelrenderable(ecx, edx)
+    end
+
+    local override = events.pre_getclientmodelrenderable:call(ecx, edx)
+    if override ~= nil then
+        return override
+    end
+        
+    local result = o_getclientmodelrenderable(ecx, edx)
+        
+    local post_override = events.post_getclientmodelrenderable:call(ecx, edx, result)
+    if post_override ~= nil then
+        return post_override
+    end
+
+    return result
+end
+
 o_updateclientside = detour.new('void(__fastcall*)(void*, void*)', hk_updateclientside, g_ctx.patterns.updateclientside)
 o_skipanimframe = detour.new('bool(__fastcall*)(void*, void*)', hk_skipanimframe, g_ctx.patterns.skipanimframe)
 o_interpolate_server_entities = detour.new('void(__fastcall*)(void*, void*)', hk_interpolate_server_entities, g_ctx.patterns.interpolate_server_entities)
@@ -350,6 +445,10 @@ o_perform_screen_overlay = detour.new('void(__fastcall*)(void*, void*, int, int,
 o_accumulate_layers = detour.new('void(__fastcall*)(void*, void*, void*, int, int, float)', hk_accumulate_layers, g_ctx.patterns.accumulate_layers)
 o_reset_latched = detour.new('void(__fastcall*)(void*, void*)', hk_reset_latched, g_ctx.patterns.reset_latched)
 o_build_transformation = detour.new('void(__fastcall*)(void*, void*, void*, int, int, int, int, int)', hk_build_transformation, g_ctx.patterns.build_transformation)
+o_csblood_spray = detour.new('void(__fastcall*)(void*)', hk_csblood_spray, g_ctx.patterns.csblood_spray)
+o_svcmsgvoicedata = detour.new('bool(__fastcall*)(void*, void*, void*)', hk_svcmsgvoicedata, g_ctx.patterns.svcmsgvoicedata)
+o_senddatagram = detour.new('int(__fastcall*)(void*, void*, void*)', hk_senddatagram, g_ctx.patterns.senddatagram)
+o_getclientmodelrenderable = detour.new('void*(__fastcall*)(void*, void*)', hk_getclientmodelrenderable, g_ctx.patterns.getclientmodelrenderable)
 
 client.set_event_callback('shutdown', function()
     for _, event in pairs({
@@ -368,7 +467,15 @@ client.set_event_callback('shutdown', function()
         events.pre_reset_latched,
         events.post_reset_latched,
         events.pre_build_transformations,
-        events.post_build_transformations
+        events.post_build_transformations,
+        events.pre_csblood_spray,
+        events.post_csblood_spray,
+        events.pre_svcmsgvoicedata,
+        events.post_svcmsgvoicedata,
+        events.pre_senddatagram,
+        events.post_senddatagram,
+        events.pre_getclientmodelrenderable,
+        events.post_getclientmodelrenderable
     }) do
         event.callbacks = { }
     end
