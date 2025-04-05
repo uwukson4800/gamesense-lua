@@ -289,7 +289,7 @@ end
 
 function hk_perform_screen_overlay(_this, edx, x, y, w, h)
     if _this == nil then
-        return o_setupbones(_this, edx, x, y, w, h)
+        return o_perform_screen_overlay(_this, edx, x, y, w, h)
     end
 
     local override = events.pre_perform_screen_overlay:call(_this, edx, x, y, w, h)
@@ -490,6 +490,10 @@ function hk_should_interpolate(ecx, edx)
 end
 
 function hk_check_for_seq_change(ecx, edx, hdr, cur_seq, force_new_seq, interp)
+    if ecx == nil then
+        return o_check_for_seq_change(ecx, edx, hdr, cur_seq, force_new_seq, interp)
+    end
+
     local override = events.pre_check_for_seq_change:call(ecx, edx, hdr, cur_seq, force_new_seq, interp)
     if override ~= nil then
         return override
